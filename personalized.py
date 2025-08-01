@@ -6,6 +6,13 @@ from pptx import Presentation
 import requests
 from bs4 import BeautifulSoup
 import os
+from dotenv import load_dotenv
+
+# ---------- Load API Key ----------
+load_dotenv()
+api_key = os.getenv("GEMINI_API_KEY") or st.secrets["gemini"]["api_key"]
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ---------- Document Readers ----------
 def read_docx(file):
@@ -38,20 +45,15 @@ def scrape_website(url):
     except Exception as e:
         return f"Error scraping website: {str(e)}"
 
-# ---------- API Configuration ----------
-api_key = "AIzaSyC9WS0oHMIaFCbgqxI-gYzNNwG9rjxRbIk"
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-2.5-flash")
-
 # ---------- Prompt Templates ----------
 def load_sales_prompt(platform):
     default_prompts = {
         "LinkedIn": """🔗 LinkedIn Message Prompt:
 You are a senior B2B sales strategist. Write a short, human, personalized LinkedIn message. Make it relevant, clear, and rooted in uploaded product content. No buzzwords or filler. Max 70 words.""",
-        
+
         "WhatsApp": """💬 WhatsApp Message Prompt:
 Write a casual yet professional WhatsApp message introducing a B2B SaaS product. Keep it brief (max 50 words), friendly, and based only on uploaded content. Don’t use emojis or sales jargon.""",
-        
+
         "Email": """✉️ Email Prompt:
 Craft a short outbound B2B email introducing a product. Include a strong opener, clear value prop, 2–3 features, and a soft CTA. Stay under 140 words. Use uploaded materials only."""
     }
@@ -113,39 +115,43 @@ with col2:
         job_title = st.text_input("Job Title (Optional)")
 
 # ---------- Generate Button ----------
-# ---------- Generate Button ----------
 if st.button(f"🧠 Generate {platform} Message"):
-    with st.spinner("Generating..."):
-        prompt_template = load_sales_prompt(platform)
+    if not user_content.strip() and not custom_prompt.strip():
+        st.error("❗ Please upload a document or enter a custom prompt before generating the message.")
+    elif message_type == "Personalized" and (not recipient_name.strip() or not company_name.strip()):
+        st.error("❗ Please fill in recipient name and company name for a personalized message.")
+    else:
+        with st.spinner("Generating..."):
+            prompt_template = load_sales_prompt(platform)
 
-        if message_type == "Generic":
-            final_prompt = (
-                f"{prompt_template}\n\n"
-                f"Generate a **generic {platform} message** using this content:\n\n{user_content[:10000]}"
-            )
-        elif custom_prompt:
-            final_prompt = (
-                f"{custom_prompt}\n\n(Here is some background info to help craft the {platform} message:)\n\n{user_content[:10000]}"
-            )
-        else:
-            final_prompt = (
-                f"{prompt_template}\n\n"
-                f"Generate a **personalized {platform} message** for:\n"
-                f"Name: {recipient_name}\n"
-                f"Company: {company_name}\n"
-                f"Job Title: {job_title}\n\n"
-                f"Background:\n{user_content[:10000]}"
-            )
+            if message_type == "Generic":
+                final_prompt = (
+                    f"{prompt_template}\n\n"
+                    f"Generate a **generic {platform} message** using this content:\n\n{user_content[:10000]}"
+                )
+            elif custom_prompt:
+                final_prompt = (
+                    f"{custom_prompt}\n\n(Here is some background info to help craft the {platform} message:)\n\n{user_content[:10000]}"
+                )
+            else:
+                final_prompt = (
+                    f"{prompt_template}\n\n"
+                    f"Generate a **personalized {platform} message** for:\n"
+                    f"Name: {recipient_name}\n"
+                    f"Company: {company_name}\n"
+                    f"Job Title: {job_title}\n\n"
+                    f"Background:\n{user_content[:10000]}"
+                )
 
-        try:
-            response = model.generate_content(final_prompt)
-            st.session_state.generated_message = response.text
-            st.session_state.edited_message = ""  # Reset edit
-            st.session_state.show_edit = True
-            st.success(f"✅ {platform} Message Generated!")
-        except Exception as e:
-            st.error(f"Generation failed: {e}")
-            st.session_state.generated_message = ""
+            try:
+                response = model.generate_content(final_prompt)
+                st.session_state.generated_message = response.text
+                st.session_state.edited_message = ""  # Reset edit
+                st.session_state.show_edit = True
+                st.success(f"✅ {platform} Message Generated!")
+            except Exception as e:
+                st.error(f"Generation failed: {e}")
+                st.session_state.generated_message = ""
 
 # ---------- Show Generated Message ----------
 if st.session_state.get("generated_message"):
@@ -154,13 +160,13 @@ if st.session_state.get("generated_message"):
 
     # ---------- Post-Generation Editing ----------
     if st.session_state.get("show_edit"):
-        st.subheader(" Refine the Message")
+        st.subheader("✏️ Refine the Message")
         edit_instruction = st.text_area(
             "Want to tweak it? Type your edit instructions here:",
             placeholder="e.g., Make it shorter and more casual"
         )
 
-        if st.button(" Edit Message"):
+        if st.button("✂️ Edit Message"):
             if edit_instruction.strip():
                 with st.spinner("Editing message..."):
                     edit_prompt = (
@@ -171,7 +177,7 @@ if st.session_state.get("generated_message"):
                     try:
                         edit_response = model.generate_content(edit_prompt)
                         st.session_state.edited_message = edit_response.text
-                        st.success(" Edited Message Ready")
+                        st.success("✅ Edited Message Ready")
                     except Exception as e:
                         st.error(f"Editing failed: {e}")
             else:
@@ -179,5 +185,5 @@ if st.session_state.get("generated_message"):
 
 # ---------- Show Edited Message ----------
 if st.session_state.get("edited_message"):
-    st.subheader(" Refined Message")
+    st.subheader("✅ Refined Message")
     st.write(st.session_state.edited_message)
